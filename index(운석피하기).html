@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>간단한 우주 피하기 게임</title>
+    <style>
+        /* CSS 스타일링 부분 */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0f0f1a;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none; /* 드래그 방지 */
+        }
+
+        #game-container {
+            position: relative;
+            width: 400px;
+            height: 600px;
+            background: linear-gradient(to bottom, #000000, #1a1a2e);
+            border: 2px solid #4ecca3;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(78, 204, 163, 0.5);
+            overflow: hidden;
+            cursor: none; /* 게임 중 커서 숨김 */
+        }
+
+        #player {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 40px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .enemy {
+            position: absolute;
+            top: -50px;
+            font-size: 30px;
+            z-index: 5;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* 클릭 통과 */
+            z-index: 20;
+        }
+
+        #score-board {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #4ecca3;
+        }
+
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: auto; /* 버튼 클릭 가능하게 */
+            cursor: default;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            color: #fff;
+            text-shadow: 0 0 10px #4ecca3;
+        }
+
+        p {
+            color: #ccc;
+            margin-bottom: 30px;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            background-color: #4ecca3;
+            border: none;
+            border-radius: 5px;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s, background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #45b08c;
+            transform: scale(1.05);
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- 플레이어 캐릭터 -->
+        <div id="player">🚀</div>
+        
+        <!-- UI 레이어 -->
+        <div id="ui-layer">
+            <div id="score-board">점수: 0</div>
+        </div>
+
+        <!-- 시작 화면 -->
+        <div id="start-screen">
+            <h1>SPACE DODGER</h1>
+            <p>마우스를 움직여 운석을 피하세요!</p>
+            <button onclick="startGame()">게임 시작</button>
+        </div>
+
+        <!-- 게임 오버 화면 -->
+        <div id="game-over-screen" class="hidden">
+            <h1 style="color: #ff4d4d;">GAME OVER</h1>
+            <p>최종 점수: <span id="final-score">0</span></p>
+            <button onclick="startGame()">다시 하기</button>
+        </div>
+    </div>
+
+    <script>
+        // JavaScript 로직 부분
+        const container = document.getElementById('game-container');
+        const player = document.getElementById('player');
+        const scoreBoard = document.getElementById('score-board');
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const finalScoreSpan = document.getElementById('final-score');
+
+        let isGameRunning = false;
+        let score = 0;
+        let animationFrameId;
+        let enemies = []; // 적 객체를 담을 배열
+        let spawnInterval;
+        let gameSpeed = 3; // 초기 속도
+
+        // 마우스 움직임으로 플레이어 조작
+        container.addEventListener('mousemove', (e) => {
+            if (!isGameRunning) return;
+
+            const rect = container.getBoundingClientRect();
+            let x = e.clientX - rect.left; // 컨테이너 기준 X 좌표
+
+            // 화면 밖으로 나가지 않게 제한
+            if (x < 20) x = 20;
+            if (x > rect.width - 20) x = rect.width - 20;
+
+            player.style.left = x + 'px';
+        });
+
+        // 게임 시작 함수
+        function startGame() {
+            // 초기화
+            isGameRunning = true;
+            score = 0;
+            gameSpeed = 3;
+            scoreBoard.innerText = '점수: 0';
+            
+            // 기존 적 제거
+            enemies.forEach(enemy => enemy.element.remove());
+            enemies = [];
+
+            // 화면 전환
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            container.style.cursor = 'none'; // 커서 숨김
+
+            // 루프 시작
+            lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+
+            // 적 생성 인터벌 (1초마다)
+            clearInterval(spawnInterval);
+            spawnInterval = setInterval(createEnemy, 1000);
+        }
+
+        // 적 생성 함수
+        function createEnemy() {
+            if (!isGameRunning) return;
+
+            const enemyEl = document.createElement('div');
+            enemyEl.classList.add('enemy');
+            enemyEl.innerText = '🪨'; // 운석 이모지
+            
+            // 랜덤 X 위치
+            const containerWidth = container.clientWidth;
+            const randomX = Math.floor(Math.random() * (containerWidth - 40));
+            
+            enemyEl.style.left = randomX + 'px';
+            enemyEl.style.top = '-50px'; // 화면 위쪽 밖에서 시작
+
+            container.appendChild(enemyEl);
+
+            enemies.push({
+                element: enemyEl,
+                y: -50,
+                speed: gameSpeed + (Math.random() * 2) // 약간의 속도 차이
+            });
+        }
+
+        let lastTime = 0;
+        // 게임 루프 (프레임마다 실행)
+        function gameLoop(timestamp) {
+            if (!isGameRunning) return;
+
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            // 적 이동 및 충돌 감지
+            for (let i = 0; i < enemies.length; i++) {
+                let enemy = enemies[i];
+                
+                // 아래로 이동
+                enemy.y += enemy.speed;
+                enemy.element.style.top = enemy.y + 'px';
+
+                // 충돌 감지 (간단한 사각형/거리 기반)
+                const playerRect = player.getBoundingClientRect();
+                const enemyRect = enemy.element.getBoundingClientRect();
+
+                // 겹침 확인 (약간 여유를 둠)
+                if (
+                    playerRect.left < enemyRect.right - 10 &&
+                    playerRect.right > enemyRect.left + 10 &&
+                    playerRect.top < enemyRect.bottom - 10 &&
+                    playerRect.bottom > enemyRect.top + 10
+                ) {
+                    gameOver();
+                    return;
+                }
+
+                // 화면 밖으로 나가면 제거 및 점수 증가
+                if (enemy.y > container.clientHeight) {
+                    enemy.element.remove();
+                    enemies.splice(i, 1);
+                    i--; // 인덱스 보정
+                    
+                    score++;
+                    scoreBoard.innerText = '점수: ' + score;
+
+                    // 난이도 상승 (10점마다 속도 증가)
+                    if (score % 10 === 0) {
+                        gameSpeed += 0.5;
+                    }
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 게임 오버 처리
+        function gameOver() {
+            isGameRunning = false;
+            cancelAnimationFrame(gameLoop);
+            clearInterval(spawnInterval);
+
+            finalScoreSpan.innerText = score;
+            gameOverScreen.classList.remove('hidden');
+            container.style.cursor = 'default'; // 커서 복구
+        }
+    </script>
+</body>
+</html>
